@@ -4,35 +4,9 @@ import jax
 import sys
 import matplotlib.pyplot as plt
 from functools import partial
+from tqdm import tqdm
 
 key = jrandom.key(1)
-
-class normal_mixture:
-    def __init__(self, locs, scales, weights=None):
-        self.n_mix = len(locs)
-        assert self.n_mix == len(scales)
-
-        self.locs = jnp.array(locs)
-        self.scales = jnp.array(scales)
-
-        if weights is not None:
-            assert self.n_mix == len(scales)
-            self.weights = jnp.array(weights)
-        else:
-            self.weights = jnp.ones(self.n_mix)/self.n_mix
-
-    def sample(self, key, shape=()):
-        key_normal, key_choice = jrandom.split(key, 2)
-        samples = jrandom.normal(key_normal, shape = shape)
-        classes = jrandom.choice(key_choice, self.n_mix, shape = shape, p = self.weights)
-
-        return samples*self.scales[classes]+self.locs[classes]
-    
-    def E(self, x):
-        E = (x[...,jnp.newaxis]-self.locs)**2/2/self.scales**2
-        b = self.weights/jnp.sqrt(2*jnp.pi)/self.scales
-        E_mix = -jax.scipy.special.logsumexp(-E, b=b, axis=-1)
-        return E_mix
 
 def random_walk_metropolis(key, E_dist, samples, proposal_std, n_steps, adaptive=False):
     proposal_mean = 0.
@@ -106,9 +80,8 @@ def mala(key, E_dist, samples, proposal_std, n_steps, return_mean = False):
     else:
         return samples
     
-#@partial(jax.jit, static_argnames=('E_dist'))
-def step_hmc(key, E_dist, samples, proposal_std, n_intervals = 1, M=1.):
-    epsilon = proposal_std/n_intervals
+@partial(jax.jit, static_argnames=('E_dist', 'L'))
+def step_hmc(key, E_dist, samples, epsilon, L = 1, M=1.):
     key_step, key_accept = jrandom.split(key, 2)
     initial_momentum = jrandom.normal(key_step, shape = (len(samples),))*jnp.sqrt(M)
     E_grad = jax.vmap(jax.grad(E_dist))
@@ -116,17 +89,17 @@ def step_hmc(key, E_dist, samples, proposal_std, n_intervals = 1, M=1.):
     # Leapfrog integration
     proposal = samples
     momentum = initial_momentum
-    x = [proposal]
-    p = [momentum]
-    for i in range(n_intervals):
+    #x = [proposal]
+    #p = [momentum]
+    for i in range(L):
         momentum = momentum - 0.5*epsilon*E_grad(proposal)
         proposal = proposal + epsilon*momentum/M
         momentum = momentum - 0.5*epsilon*E_grad(proposal)
-        x.append(proposal)
-        p.append(momentum)
-    for i in range(100):
-        plt.plot([j[i] for j in x], [j[i] for j in p])
-    plt.show()
+    #    x.append(proposal)
+    #    p.append(momentum)
+    #for i in range(100):
+    #    plt.plot([j[i] for j in x], [j[i] for j in p])
+    #plt.show()
     log_alpha = (E_dist(samples)+0.5*initial_momentum**2/M) \
         - (E_dist(proposal)+0.5*momentum**2/M)
     alpha = jnp.exp(jnp.minimum(log_alpha,0.))
@@ -139,7 +112,7 @@ def hmc(key, E_dist, samples, proposal_std, n_steps, return_mean = False, M=1.):
         mean = [jnp.mean(samples)]
     for i in range(n_steps):
         key, key_temp = jrandom.split(key, 2)
-        samples = step_hmc(key_temp, E_dist, samples, proposal_std, n_intervals = 10, M=M)
+        samples = step_hmc(key_temp, E_dist, samples, proposal_std/10, L = 100, M=M)
         del key_temp
 
         if return_mean:
@@ -149,44 +122,68 @@ def hmc(key, E_dist, samples, proposal_std, n_steps, return_mean = False, M=1.):
     else:
         return samples
 
-n_points = 10000
-model0 = normal_mixture((-1,1), (0.1,0.1), (0.8, 0.2))
-model1 = normal_mixture((-1,1), (0.1,0.1), (0.2, 0.8))
+if __name__=="__main__":
+    n_points = 10000
+    def logp(x):
+        return -x**2/2-0.5*jnp.log(2*jnp.pi)
 
-key, key_temp = jrandom.split(key,2)
-samples = model0.sample(key_temp, (n_points,))
-del key_temp
+    key, key_temp = jrandom.split(key, 2)
+    samples = jrandom.normal(key=key_temp, shape=(n_points,))
+    del key_temp
 
-M = 0.1
-key, key_temp = jrandom.split(key,2)
-hmc_samples, hmc_mean = hmc(key_temp, model0.E, samples, 0.4*jnp.sqrt(M), 1, return_mean=True, M=M)
-del key_temp
+    sample_variance = jnp.var(samples)
 
-sys.exit()
-key, key_temp = jrandom.split(key,2)
-mala_samples, mala_mean = mala(key_temp, model1.E, samples, 0.39, 50000, return_mean=True)
-del key_temp
+    @jax.jit
+    def corr(init_samples, samples):
+        return jnp.mean((init_samples-jnp.mean(init_samples))*(samples-jnp.mean(samples)))
 
-key, key_temp = jrandom.split(key,2)
-rwm_samples, rwm_mean = random_walk_metropolis(key_temp, model1.E, samples, 2.0, 50000, return_mean=True)
-del key_temp
+    # HMC
 
-#print(jnp.argmax(rwm_mean>0.6-1.2/jnp.sqrt(n_points)))
-#print(0.6-1.2/jnp.sqrt(n_points))
-plt.plot(range(1,50002),rwm_mean)
-plt.plot(range(1,50002),mala_mean)
-plt.xscale('log')
-plt.axhline(0.6)
-plt.axhline(-0.6)
-plt.show()
-sys.exit()
-bins = jnp.linspace(-1.5,1.5,50)
-dense = jnp.linspace(-1.5,1.5,1000)
+    hmc_samples = samples
+    hmc_corr = [corr(samples, hmc_samples)]
 
-plt.hist(samples, bins = bins, density=True, alpha=0.5)
-plt.hist(rwm_samples, bins = bins, density=True, alpha=0.5)
+    while hmc_corr[-1]/sample_variance>1/jnp.sqrt(n_points):
+        key, key_temp = jrandom.split(key, 2)
+        hmc_samples = step_hmc(key_temp, lambda x: -logp(x), hmc_samples, epsilon = jnp.pi/2, L=1)
+        del key_temp
+        hmc_corr.append(corr(samples, hmc_samples))
 
-plt.plot(dense, jnp.exp(-model0.E(dense)))
-plt.plot(dense, jnp.exp(-model1.E(dense)))
-plt.show()
-sys.exit()
+    # MALA
+
+    mala_samples = samples
+    mala_corr = [corr(samples, mala_samples)]
+
+    while mala_corr[-1]/sample_variance>1/jnp.sqrt(n_points):
+        key, key_temp = jrandom.split(key, 2)
+        mala_samples = step_mala(key_temp, lambda x: -logp(x), mala_samples, 2.15)
+        del key_temp
+        mala_corr.append(corr(samples, mala_samples))
+
+    # RWM
+
+    rwm_samples = samples
+    rwm_corr = [corr(samples, rwm_samples)]
+
+    while rwm_corr[-1]/sample_variance>1/jnp.sqrt(n_points):
+        key, key_temp = jrandom.split(key, 2)
+        rwm_samples = step_random_walk_metropolis(key_temp, lambda x: -logp(x), rwm_samples, 2.0)
+        del key_temp
+        rwm_corr.append(corr(samples, rwm_samples))
+    
+
+    plt.plot(rwm_corr,label='RWM')
+    plt.plot(mala_corr,label='MALA')
+    plt.plot(hmc_corr,label='HMC')
+    plt.legend()
+    plt.ylim(1/jnp.sqrt(n_points), 1)
+    plt.yscale('log')
+    plt.show()
+
+    bins = jnp.linspace(-5,5,101)
+    plt.hist(samples, bins=bins, density=True, alpha=0.5,label='Initial Samples')
+    plt.hist(rwm_samples, bins=bins, density=True, alpha=0.5,label='RWM')
+    plt.hist(mala_samples, bins=bins, density=True, alpha=0.5,label='MALA')
+    plt.hist(hmc_samples, bins=bins, density=True, alpha=0.5,label='HMC')
+    plt.plot(bins, jnp.exp(logp(bins)))
+    plt.legend()
+    plt.show()
