@@ -1,6 +1,6 @@
 # JAXmcmc: Simple MCMC sampling in JAX
 
-JAXmcmc provides a set of functions for MCMC sampling from log-likelihood landscapes, where the normalizing constant doesn't need to be known explicitly. 
+JAXmcmc provides a set of functions for MCMC sampling from log-likelihood landscapes, where the normalizing constant doesn't need to be known explicitly. This library is based on [JAX](https://github.com/google/jax), and is intended to be minimal and extensible for easy experimentation.
 
 ## Quickstart
 
