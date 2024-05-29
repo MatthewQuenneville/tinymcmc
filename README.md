@@ -12,7 +12,7 @@ The second line can be added to your `~/.bashrc` file to permanently add it to y
 
 ## Quickstart
 
-Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood. Samples are intialized from a uniform distribution, and relaxed towards the desired log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`.
+Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood. Samples are intialized from a uniform distribution, and relaxed towards the desired log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`:
 ```python
 import tinymcmc
 import jax
