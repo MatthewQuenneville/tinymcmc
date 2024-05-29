@@ -2,6 +2,14 @@
 
 TinyMCMC provides a set of Python functions for Markov chain Monte Carlo (MCMC) sampling from log-likelihood landscapes, where the normalizing constant doesn't need to be known explicitly. This library is based on [JAX](https://github.com/google/jax), and is intended to be minimal and extensible for easy experimentation.
 
+## Installation
+To use the library, clone it and add it to your python path:
+```bash
+git clone https://github.com/MatthewQuenneville/tinymcmc.git /path/to/installation/
+export PYTHONPATH=$PYTHONPATH:/path/to/installation/tinymcmc/
+```
+The second line can be added to your `~/.bashrc` file to permanently add it to your python path.
+
 ## Quickstart
 
 Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood. Samples are intialized from a uniform distribution, and relaxed towards the desired log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`.
