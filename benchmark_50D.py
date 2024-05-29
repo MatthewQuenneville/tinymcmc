@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax
 import matplotlib.pyplot as plt
-import jaxmcmc
+import tinymcmc
 
 if __name__=="__main__":
 
@@ -32,7 +32,7 @@ if __name__=="__main__":
 
     @jax.jit
     def step_func(key, samples):
-        return jaxmcmc.step_hmc(key, lambda x: -logp(x), samples, hmc_length_scale, L = L)
+        return tinymcmc.step_hmc(key, lambda x: -logp(x), samples, hmc_length_scale, L = L)
     
     hmc_samples = samples
     hmc_corr = [corr(samples, hmc_samples)/sample_variance]
@@ -49,7 +49,7 @@ if __name__=="__main__":
 
     @jax.jit
     def step_func(key, samples):
-        return jaxmcmc.step_mala(key, lambda x: -logp(x), samples, mala_length_scale)
+        return tinymcmc.step_mala(key, lambda x: -logp(x), samples, mala_length_scale)
 
     mala_samples = samples
     mala_corr = [corr(samples, mala_samples)/sample_variance]
@@ -66,7 +66,7 @@ if __name__=="__main__":
 
     @jax.jit
     def step_func(key, samples):
-        return jaxmcmc.step_rwm(key, lambda x: -logp(x), samples, rwm_length_scale)
+        return tinymcmc.step_rwm(key, lambda x: -logp(x), samples, rwm_length_scale)
 
     rwm_samples = samples
     rwm_corr = [corr(samples, rwm_samples)/sample_variance]
