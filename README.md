@@ -8,7 +8,7 @@ To use the library, clone it and add it to your python path:
 git clone https://github.com/MatthewQuenneville/tinymcmc.git /path/to/installation/
 export PYTHONPATH=$PYTHONPATH:/path/to/installation/tinymcmc/
 ```
-The second line can be added to your `~/.bashrc` file to permanently add it to your python path.
+The second line can be added to your `~/.bashrc` file to permanently add it to your python path. The libraries listed in `requirements.txt` should be installed as well.
 
 ## Quickstart
 
