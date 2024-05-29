@@ -4,7 +4,7 @@ JAXmcmc provides a set of functions for MCMC sampling from log-likelihood landsc
 
 ## Quickstart
 
-Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`.
+Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood. Samples are intialized from a uniform distribution, and relaxed towards the desired log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`.
 ```python
 import jaxmcmc
 import jax
@@ -13,16 +13,20 @@ import matplotlib.pyplot as plt
 def minus_log_likelihood(x):
     return 0.5*x**2
 
+n_steps = 10
+epsilon = 0.5
+L = 3
+
 @jax.jit
 def mcmc_step(key, x):
-    return jaxmcmc.step_hmc(key, minus_log_likelihood, x, 0.5, 3)
+    return jaxmcmc.step_hmc(key, minus_log_likelihood, x, epsilon, L)
 
 key = jax.random.key(1)
 key, key_temp = jax.random.split(key, 2)
 init_samples = jax.random.uniform(key, (1000,), minval=-1, maxval=1)
 samples = init_samples
 
-for i in range(10):
+for i in range(n_steps):
     key, key_temp = jax.random.split(key, 2)
     samples = mcmc_step(key_temp, samples)
 
