@@ -36,7 +36,7 @@ def mcmc_and_exchange_step(key, x1, x2):
     return tinymcmc.step_exchange(key_exchange, minus_log_likelihood, x1,
                                   minus_log_likelihood_high_temp, x2)
 ```
-Having defined the sampling step, we can initialize samples, perform the MCMC steps, and plot a histogram of the results:
+Having defined the sampling step, we can initialize samples (10000 chains for each replica in this case), perform the MCMC steps, and plot a histogram of the results:
 ```python
 samples_lowT = jax.numpy.ones(10000)/jax.numpy.sqrt(2)
 samples_highT = jax.numpy.ones(10000)/jax.numpy.sqrt(2)
