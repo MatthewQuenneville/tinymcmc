@@ -51,11 +51,12 @@ def step_rwm(key, E_dist, samples, proposal_std,
     # Enforce bound constraints
     out_of_bounds = jnp.logical_or(proposal>bounds[1],
                                    proposal<bounds[0])
-    if len(samples.shape)>1:
-        out_of_bounds = jnp.any(out_of_bounds, axis=1)
+    for i in samples.shape[1:]:
+        out_of_bounds = jnp.any(out_of_bounds, axis=-1)
+    
     accept = jnp.where(out_of_bounds, False, accept)
-    if len(samples.shape)>1:
-        accept = jnp.repeat(accept[:,jnp.newaxis],samples.shape[1],axis=1)
+    for i in samples.shape[1:]:
+        accept = jnp.repeat(accept[...,jnp.newaxis], i, axis=-1)
     samples = jnp.where(accept, proposal, samples)
     return samples
 
@@ -113,11 +114,12 @@ def step_mala(key, E_dist, samples, proposal_std,
     # Enforce bound constraints
     out_of_bounds = jnp.logical_or(proposal>bounds[1],
                                    proposal<bounds[0])
-    if len(samples.shape)>1:
-        out_of_bounds = jnp.any(out_of_bounds, axis=1)
+    for i in samples.shape[1:]:
+        out_of_bounds = jnp.any(out_of_bounds, axis=-1)
+    
     accept = jnp.where(out_of_bounds, False, accept)
-    if len(samples.shape)>1:
-        accept = jnp.repeat(accept[:,jnp.newaxis],samples.shape[1],axis=1)
+    for i in samples.shape[1:]:
+        accept = jnp.repeat(accept[...,jnp.newaxis], i, axis=-1)
     samples = jnp.where(accept, proposal, samples)
     return samples
     
@@ -197,12 +199,83 @@ def step_hmc(key, E_dist, samples, epsilon, L, M=1.,
     # Enforce bound constraints
     out_of_bounds = jnp.logical_or(proposal>bounds[1],
                                    proposal<bounds[0])
-    if len(samples.shape)>1:
-        out_of_bounds = jnp.any(out_of_bounds, axis=1)
+    for i in samples.shape[1:]:
+        out_of_bounds = jnp.any(out_of_bounds, axis=-1)
+
     accept = jnp.where(out_of_bounds, False, accept)
-    if len(samples.shape)>1:
-        accept = jnp.repeat(accept[:,jnp.newaxis],samples.shape[1],axis=1)
+
+    for i in samples.shape[1:]:
+        accept = jnp.repeat(accept[...,jnp.newaxis], i, axis=-1)
 
     samples = jnp.where(accept, proposal, samples)
 
     return samples
+
+@partial(jax.jit, static_argnames=('E_dist1', 'E_dist2', 'metropolize'))
+def step_exchange(key, E_dist1, samples1, E_dist2, samples2, metropolize=True):
+    """Replica Exchange (Parallel Tempering) sampling step
+
+    Computes the next sets of samples after a Replica Exchange step
+
+    Parameters
+    ----------
+    key : jax.prng.PRNGKeyArray
+        Random key
+    E_dist1 : function
+        Negative log-likelihood function for first replica
+    samples1 : array_like
+        Array of samples for the first replica, with the first axis 
+        indexing the samples. Any additional axes should be mapped by 
+        E_dist1 to a scalar. The shape of samples1 must match the shape 
+        of samples2, with the possible exception of the first axis length.
+    E_dist2 : function
+        Negative log-likelihood function for second replica
+    samples2 : array_like
+        Array of samples for the second replica, with the first axis 
+        indexing the samples. Any additional axes should be mapped by 
+        E_dist1 to a scalar. The shape of samples2 must match the shape 
+        of samples1, with the possible exception of the first axis length.
+    metropolize: boolean, optional
+        Controls whether to apply a Metropolis-Hastings correction.
+        If False, all proposed exchanges are accepted.
+        Defaults to True.
+
+    Returns
+    -------
+    out1 : array_like
+        Array of samples for the first replica after the exchange step
+    out2 : array_like
+        Array of samples for the second replica after the exchange step
+
+    Notes
+    -----
+    If samples1 and samples2 contain different numbers of samples (ie. their
+    first axes have different lengths), then a single exchange is attempted for
+    each sample in the smaller set, and the remaining samples in the larger set
+    are left unchanged.
+
+    """
+    n_swap = min(samples1.shape[0], samples2.shape[0])
+    key1, key2, key_accept = jrandom.split(key, 3)
+
+    proposal_index1 = jrandom.choice(key1, samples1.shape[0], shape=(n_swap,), replace=False)
+    proposal_index2 = jrandom.choice(key2, samples2.shape[0], shape=(n_swap,), replace=False)
+
+    if metropolize:
+        initial_E = E_dist1(samples1[proposal_index1]) + E_dist2(samples2[proposal_index2])
+        swapped_E = E_dist2(samples1[proposal_index1]) + E_dist1(samples2[proposal_index2])
+        alpha = jnp.exp(jnp.minimum(initial_E-swapped_E, 0.))
+        accept = jrandom.uniform(key_accept, minval=0, maxval=1, shape = alpha.shape)<alpha
+    else:
+        accept = jnp.ones(n_swap, dtype=bool)
+
+    for i in samples1.shape[1:]:
+        accept = jnp.repeat(accept[...,jnp.newaxis], i, axis=-1)
+
+    swapped_values1 = jnp.where(accept, samples2[proposal_index2], samples1[proposal_index1])
+    swapped_values2 = jnp.where(accept, samples1[proposal_index1], samples2[proposal_index2])
+
+    samples1 = samples1.at[proposal_index1].set(swapped_values1)
+    samples2 = samples2.at[proposal_index2].set(swapped_values2)
+    
+    return samples1, samples2
