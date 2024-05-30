@@ -25,7 +25,7 @@ def minus_log_likelihood(x):
 n_steps = 50
 epsilon = 0.25
 L = 3
-T_ratio = 20
+T_ratio = 20.
 
 @jax.jit
 def mcmc_and_exchange_step(key, x1, x2):
