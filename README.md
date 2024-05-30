@@ -14,7 +14,7 @@ The second line can be added to your `~/.bashrc` file to permanently add it to y
 
 ## Quickstart
 
-Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood, with Replica Exchange. Samples are intialized from a single point, and relaxed towards the desired log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`. In this case, the sampling function contains an HMC step for the base distribution, an HMC step for the high-temperature replica (here, at 20 times the base temperature), and an exchange step between the two replicas.
+Below is a minimal example to perform Hamiltonian Monte Carlo sampling from a log-likelihood, with Replica Exchange/Parallel Tempering. Samples are intialized from a single point, and relaxed towards the desired log-likelihood. For best performance, a function should be constructed for the MCMC step, such that it can be accelerated with just-in-time compilation with `jax.jit`. In this case, the sampling function contains an HMC step for the base distribution, an HMC step for the high-temperature replica (here, at 20 times the base temperature), and an exchange step between the two replicas.
 ```python
 import tinymcmc
 import jax
