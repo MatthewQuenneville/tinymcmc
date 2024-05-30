@@ -2,6 +2,8 @@
 
 TinyMCMC provides a set of Python functions for Markov chain Monte Carlo (MCMC) sampling from log-likelihood landscapes, where the normalizing constant doesn't need to be known explicitly. This library is based on [JAX](https://github.com/google/jax), and is intended to be minimal and extensible for easy experimentation.
 
+TinyMCMC uses automatic differentiation for gradient-based samplers, making it compatible with deep learning applications including [Flax](https://github.com/google/flax). TinyMCMC includes samplers such as Random Walk Metropolis (RWM), the Metropolis-Adjusted Langevin Algorithm (MALA) and Hamiltonian Monte-Carlo (HMC), as well as support for Replica Exchange/Parallel Tempering. 
+
 ## Installation
 To use the library, clone it and add it to your python path:
 ```bash
