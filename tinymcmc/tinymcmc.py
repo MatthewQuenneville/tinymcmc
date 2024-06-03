@@ -2,6 +2,7 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax
 from functools import partial
+import numpy as np
 
 @partial(jax.jit, static_argnames=('E_dist', 'metropolize'))
 def step_rwm(key, E_dist, samples, proposal_std, 
@@ -213,9 +214,9 @@ def step_hmc(key, E_dist, samples, epsilon, L, M=1.,
 
 @partial(jax.jit, static_argnames=('E_dist1', 'E_dist2', 'metropolize'))
 def step_exchange(key, E_dist1, samples1, E_dist2, samples2, metropolize=True):
-    """Replica Exchange (Parallel Tempering) sampling step
+    """Replica Exchange (Parallel Tempering) sampling step for a pair of replicas
 
-    Computes the next sets of samples after a Replica Exchange step
+    Computes the next sets of samples after a pair Replica Exchange step
 
     Parameters
     ----------
@@ -279,3 +280,79 @@ def step_exchange(key, E_dist1, samples1, E_dist2, samples2, metropolize=True):
     samples2 = samples2.at[proposal_index2].set(swapped_values2)
     
     return samples1, samples2
+
+@partial(jax.jit, static_argnames=('E_dists', 'index_counts', 'parity', 'metropolize'))
+def step_tempering(key, E_dists, samples, replica_index, index_counts, 
+                   parity = 0, metropolize = True):
+    """Replica Exchange (Parallel Tempering) sampling step
+
+    Computes the next sets of samples after a Replica Exchange step
+
+    Parameters
+    ----------
+    key : jax.prng.PRNGKeyArray
+        Random key
+    E_dists : tuple of functions
+        Negative log-likelihood functions for indexed replicas
+    samples : array_like
+        Array of samples for all replicas, with the first axis 
+        indexing the samples. Any additional axes should be mapped by 
+        the functions in E_dists to scalars. 
+    replica_index : array_like
+        Vector of replica indices for each sample in samples. The length 
+        replica_index should equal the length of the first axis of samples.
+        Indices should be integers ranging from 0 to len(E_dists)-1.
+    index_counts : tuple of ints
+        Tuple containing the number of samples belonging to each replica.
+        Must have the same length as E_dists.
+    parity: {0, 1}, optional
+        Parity of swaps to perform. If 0 ( 1 ), replica indices are 
+        swapped according to 2n <-> 2n+1 ( 2n+1 <-> 2n+2 ). 
+        Defaults to 0.
+    metropolize: boolean, optional
+        Controls whether to apply a Metropolis-Hastings correction.
+        If False, all proposed exchanges are accepted.
+        Defaults to True.
+
+    Returns
+    -------
+    out : array_like
+        Array of replica indices after the parallel tempering step has been performed.
+
+    Notes
+    -----
+    If the values in index_counts differ, then for each pair, a single exchange is 
+    attempted for each sample in the smaller set, and the remaining samples in the larger set
+    are left unchanged.
+    """
+    assert parity in (0, 1)
+
+    n_dists = len(E_dists)
+    for i in range(n_dists):
+        if i%2!=parity or i+1==n_dists:
+            continue
+        n_swap = min(index_counts[i], 
+                     index_counts[i+1])
+        base_dist = i if index_counts[i]<=index_counts[i+1] else i+1
+        swap_dist = i+(1-(base_dist-i))
+
+        base_inds = jnp.where(replica_index==base_dist, size=index_counts[base_dist])[0]
+        swap_inds = jnp.where(replica_index==swap_dist, size=index_counts[swap_dist])[0]
+
+        key, key_permute, key_accept = jrandom.split(key, 3)
+        proposal_inds = jrandom.choice(key_permute, swap_inds, shape=(n_swap,), replace=False)
+
+        if metropolize:
+            initial_E = E_dists[base_dist](samples[base_inds]) \
+                + E_dists[swap_dist](samples[proposal_inds])
+            swapped_E = E_dists[swap_dist](samples[base_inds]) \
+                + E_dists[base_dist](samples[proposal_inds])
+            alpha = jnp.exp(jnp.minimum(initial_E-swapped_E, 0.))
+            accept = jrandom.uniform(key_accept, minval=0, maxval=1, shape = alpha.shape)<alpha
+        else:
+            accept = jnp.ones(n_swap, dtype=bool)
+
+        replica_index = replica_index.at[proposal_inds].set(jnp.where(accept, base_dist, swap_dist))
+        replica_index = replica_index.at[base_inds].set(jnp.where(accept, swap_dist, base_dist))
+
+    return replica_index
