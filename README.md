@@ -53,4 +53,6 @@ plt.xlabel('Value')
 plt.ylabel('Counts')
 plt.show()
 ```
-A more complete version of this example is provided in `examples/example_replica_exchange.py`.
+A more complete version of this example is provided in `examples/example_replica_exchange.py`. 
+
+When dealing with high-dimensional data, `step_tempering` should be preferred over `step_exchange`. Usage of `step_tempering` is demonstrated in `examples/example_tempering.py`.
