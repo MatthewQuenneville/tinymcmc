@@ -2,7 +2,6 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax
 from functools import partial
-import numpy as np
 
 @partial(jax.jit, static_argnames=('E_dist', 'metropolize'))
 def step_rwm(key, E_dist, samples, proposal_std, 
@@ -361,7 +360,7 @@ def step_tempering(key, E_dists, samples, replica_index):
     accept = jrandom.uniform(key_accept, alpha.shape,minval=0,maxval=1)<alpha
     shift_dir = jnp.pad(accept.astype(int),((0,1),(0,0)))-jnp.pad(accept.astype(int),((1,0),(0,0)))
     replica_index = jnp.select((shift_dir==-1,shift_dir==0,shift_dir==1),
-                               (replica_index.take(np.arange(-1,n_dists-1),axis=0),
-                                replica_index.take(np.arange(0,n_dists),axis=0),
-                                replica_index.take(np.arange(1,n_dists+1),axis=0)))
+                               (replica_index.take(jnp.arange(-1,n_dists-1),axis=0),
+                                replica_index.take(jnp.arange(0,n_dists),axis=0),
+                                replica_index.take(jnp.arange(1,n_dists+1),axis=0)))
     return replica_index
