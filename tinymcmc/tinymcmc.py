@@ -250,6 +250,9 @@ def step_exchange(key, E_dist1, samples1, E_dist2, samples2, metropolize=True):
 
     Notes
     -----
+    The step_tempering function below should be favoured for applications 
+    where performance is important.
+
     If samples1 and samples2 contain different numbers of samples (ie. their
     first axes have different lengths), then a single exchange is attempted for
     each sample in the smaller set, and the remaining samples in the larger set
@@ -281,9 +284,8 @@ def step_exchange(key, E_dist1, samples1, E_dist2, samples2, metropolize=True):
     
     return samples1, samples2
 
-@partial(jax.jit, static_argnames=('E_dists', 'index_counts', 'parity', 'metropolize'))
-def step_tempering(key, E_dists, samples, replica_index, index_counts, 
-                   parity = 0, metropolize = True):
+@partial(jax.jit, static_argnames=('E_dists'))
+def step_tempering(key, E_dists, samples, replica_index):
     """Replica Exchange (Parallel Tempering) sampling step
 
     Computes the next sets of samples after a Replica Exchange step
@@ -297,62 +299,69 @@ def step_tempering(key, E_dists, samples, replica_index, index_counts,
     samples : array_like
         Array of samples for all replicas, with the first axis 
         indexing the samples. Any additional axes should be mapped by 
-        the functions in E_dists to scalars. 
-    replica_index : array_like
-        Vector of replica indices for each sample in samples. The length 
-        replica_index should equal the length of the first axis of samples.
-        Indices should be integers ranging from 0 to len(E_dists)-1.
-    index_counts : tuple of ints
-        Tuple containing the number of samples belonging to each replica.
-        Must have the same length as E_dists.
-    parity: {0, 1}, optional
-        Parity of swaps to perform. If 0 ( 1 ), replica indices are 
-        swapped according to 2n <-> 2n+1 ( 2n+1 <-> 2n+2 ). 
-        Defaults to 0.
-    metropolize: boolean, optional
-        Controls whether to apply a Metropolis-Hastings correction.
-        If False, all proposed exchanges are accepted.
-        Defaults to True.
+        the functions in E_dists to scalars. Each replica must contain
+        an equal number of samples.
+    replica_index : array_like of ints
+        2D array of replica indices for each sample in samples. The first axis
+        indexes the different replicas, while the second indexes the samples
+        within each replica. Indices should be integers ranging from 0 to 
+        len(E_dists)-1.
 
     Returns
     -------
-    out : array_like
-        Array of replica indices after the parallel tempering step has been performed.
+    out : array_like of ints
+        Array of replica indices after the parallel tempering step has been 
+        performed. See replica_index for further description.
 
     Notes
     -----
-    If the values in index_counts differ, then for each pair, a single exchange is 
-    attempted for each sample in the smaller set, and the remaining samples in the larger set
-    are left unchanged.
+    Each replica must have the same number of samples. 
     """
-    assert parity in (0, 1)
 
-    n_dists = len(E_dists)
+    n_dists, samples_per_dist = replica_index.shape
+
+    key, key_permute, key_parity = jrandom.split(key, 3)
+    replica_index = jrandom.permutation(
+        key_permute, 
+        replica_index,
+        axis=1, independent=True)
+    if n_dists>2:
+        parity = jrandom.randint(key_parity, (samples_per_dist,),0,2)
+
+    E = jnp.zeros_like(replica_index, dtype=float)
+    E_shift_up = jnp.nan*jnp.ones_like(replica_index, dtype=float)
+    E_shift_down = jnp.nan*jnp.ones_like(replica_index, dtype=float)
     for i in range(n_dists):
-        if i%2!=parity or i+1==n_dists:
-            continue
-        n_swap = min(index_counts[i], 
-                     index_counts[i+1])
-        base_dist = i if index_counts[i]<=index_counts[i+1] else i+1
-        swap_dist = i+(1-(base_dist-i))
+        E = E.at[i].set(E_dists[i](samples[replica_index[i]]))
+        if i<n_dists-1:
+            E_shift_up = E_shift_up.at[i].set(E_dists[i+1](samples[replica_index[i]]))
+        if i>0:
+            E_shift_down = E_shift_down.at[i].set(E_dists[i-1](samples[replica_index[i]]))
 
-        base_inds = jnp.where(replica_index==base_dist, size=index_counts[base_dist])[0]
-        swap_inds = jnp.where(replica_index==swap_dist, size=index_counts[swap_dist])[0]
+    # Even parity swaps
+    E_init = E[:-1:2]+E[1::2]
+    E_final = E_shift_up[:-1:2]+E_shift_down[1::2]
+    alpha_even = jnp.exp(jnp.minimum(E_init-E_final, 0.))
 
-        key, key_permute, key_accept = jrandom.split(key, 3)
-        proposal_inds = jrandom.choice(key_permute, swap_inds, shape=(n_swap,), replace=False)
+    if n_dists>2:
+        # Odd parity swaps
+        E_init = E[1:-1:2]+E[2::2]
+        E_final = E_shift_up[1:-1:2]+E_shift_down[2::2]
+        alpha_odd = jnp.exp(jnp.minimum(E_init-E_final, 0.))
 
-        if metropolize:
-            initial_E = E_dists[base_dist](samples[base_inds]) \
-                + E_dists[swap_dist](samples[proposal_inds])
-            swapped_E = E_dists[swap_dist](samples[base_inds]) \
-                + E_dists[base_dist](samples[proposal_inds])
-            alpha = jnp.exp(jnp.minimum(initial_E-swapped_E, 0.))
-            accept = jrandom.uniform(key_accept, minval=0, maxval=1, shape = alpha.shape)<alpha
-        else:
-            accept = jnp.ones(n_swap, dtype=bool)
 
-        replica_index = replica_index.at[proposal_inds].set(jnp.where(accept, base_dist, swap_dist))
-        replica_index = replica_index.at[base_inds].set(jnp.where(accept, swap_dist, base_dist))
+    alpha = jnp.zeros((n_dists-1,samples_per_dist))
+    alpha = alpha.at[::2].set(alpha_even)
+    if n_dists>2:
+        alpha = alpha.at[1::2].set(alpha_odd)
+        alpha = jnp.where(jnp.indices(alpha.shape)[0]%2==parity,alpha,0.)
 
+    key, key_accept = jrandom.split(key, 2)
+
+    accept = jrandom.uniform(key_accept, alpha.shape,minval=0,maxval=1)<alpha
+    shift_dir = jnp.pad(accept.astype(int),((0,1),(0,0)))-jnp.pad(accept.astype(int),((1,0),(0,0)))
+    replica_index = jnp.select((shift_dir==-1,shift_dir==0,shift_dir==1),
+                               (replica_index.take(np.arange(-1,n_dists-1),axis=0),
+                                replica_index.take(np.arange(0,n_dists),axis=0),
+                                replica_index.take(np.arange(1,n_dists+1),axis=0)))
     return replica_index
