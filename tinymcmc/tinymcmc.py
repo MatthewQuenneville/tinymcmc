@@ -305,7 +305,7 @@ def step_tempering(key, E_dists, samples, replica_index):
         2D array of replica indices for each sample in samples. The first axis
         indexes the different replicas, while the second indexes the samples
         within each replica. Indices should be integers ranging from 0 to 
-        len(E_dists)-1.
+        len(samples)-1.
 
     Returns
     -------
