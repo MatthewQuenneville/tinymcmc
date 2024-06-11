@@ -251,7 +251,7 @@ def step_exchange(key, E_dist1, samples1, E_dist2, samples2, metropolize=True):
     Notes
     -----
     The step_tempering function below should be favoured for applications 
-    where performance is important.
+    where the data has many dimensions, and performance is important.
 
     If samples1 and samples2 contain different numbers of samples (ie. their
     first axes have different lengths), then a single exchange is attempted for
