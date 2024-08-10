@@ -62,7 +62,8 @@ def step_rwm(key, E_dist, samples, proposal_std,
 
 @partial(jax.jit, static_argnames=('E_dist', 'metropolize'))
 def step_mala(key, E_dist, samples, proposal_std, 
-              bounds = (-jnp.inf, jnp.inf), metropolize = True):
+              bounds = (-jnp.inf, jnp.inf), metropolize = True,
+              noise_scale = 1.0):
     """Metropolis-Adjusted Langevin Algorithm sampling step
 
     Computes the next set of samples after a Metropolis-Adjusted Langevin step
@@ -83,9 +84,15 @@ def step_mala(key, E_dist, samples, proposal_std,
         a tuple of two floats, or a tuple of two 1-dimensional 
         array_likes with the same size as the first axis of samples.
         Defaults to (-infinity, infinity).
-    metropolize: boolean, optional
+    metropolize : boolean, optional
         Controls whether to apply a Metropolis-Hastings correction.
         Defaults to True.
+    noise_scale : float, optional
+        Scaling factor for the gaussian noise term. A value of 1
+        is needed for Metropolis-Adjusted Langevin, while a value of 0
+        neglects the gaussian noise term. A value of 1 is needed to guarantee
+        convergence to the correct stationary distribution. 
+        Defaults to 1. 
 
     Returns
     -------
@@ -96,9 +103,11 @@ def step_mala(key, E_dist, samples, proposal_std,
     E_grad = jax.vmap(jax.grad(E_dist))
 
     key_step, key_accept = jrandom.split(key, 2)
+
     proposal = samples
     proposal = proposal - 0.5*proposal_std**2*E_grad(samples)
-    proposal = proposal + jrandom.normal(key_step, shape=samples.shape)*proposal_std
+    proposal = proposal + noise_scale * \
+        jrandom.normal(key_step, shape=samples.shape)*proposal_std
 
     def E_q(xp, x):
         return 1/2/proposal_std**2*jnp.einsum('i...->i',(xp-x+0.5*proposal_std**2*E_grad(x))**2)
